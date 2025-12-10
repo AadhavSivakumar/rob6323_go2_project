@@ -119,10 +119,10 @@ class Rob6323Go2Env(DirectRLEnv):
 
         self.last_actions = torch.roll(self.last_actions, 1, 2)
         self.last_actions[:, :, 0] = self._actions[:]
-        
+
         rewards = {
-            "track_lin_vel_xy_exp": lin_vel_error_mapped * self.cfg.lin_vel_reward_scale, # Removed step_dt
-            "track_ang_vel_z_exp": yaw_rate_error_mapped * self.cfg.yaw_rate_reward_scale, # Removed step_dt
+            "track_lin_vel_xy_exp": lin_vel_error_mapped * self.cfg.lin_vel_reward_scale,  # Removed step_dt
+            "track_ang_vel_z_exp": yaw_rate_error_mapped * self.cfg.yaw_rate_reward_scale,  # Removed step_dt
             "rew_action_rate": rew_action_rate * self.cfg.action_rate_reward_scale,
         }
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
