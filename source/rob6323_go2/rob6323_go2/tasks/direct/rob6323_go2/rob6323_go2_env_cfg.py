@@ -97,7 +97,7 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     # In Rob6323Go2EnvCfg (source/rob6323_go2/rob6323_go2/tasks/direct/rob6323_go2/rob6323_go2_env_cfg.py)
 
     # reward scales
-    action_rate_reward_scale = -0.1
+    action_rate_reward_scale = -0.5
 
     # PD control gains
     Kp = 20.0  # Proportional gain
@@ -117,4 +117,7 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     lin_vel_z_reward_scale = -0.02
     dof_vel_reward_scale = -0.0001
     ang_vel_xy_reward_scale = -0.001
+
+    feet_clearance_reward_scale = -30.0
+    tracking_contacts_shaped_force_reward_scale = 4.0
     
