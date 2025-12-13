@@ -9,7 +9,9 @@ from __future__ import annotations
 import gymnasium as gym
 import math
 import torch
+import numpy as np
 from collections.abc import Sequence
+
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation
@@ -35,7 +37,6 @@ class Rob6323Go2Env(DirectRLEnv):
         for name in foot_names:
             id_list, _ = self.robot.find_bodies(name)
             self._feet_ids.append(id_list[0])
-
 
         # Variables needed for the raibert heuristic
         self.gait_indices = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
@@ -64,7 +65,11 @@ class Rob6323Go2Env(DirectRLEnv):
                 "track_lin_vel_xy_exp",
                 "track_ang_vel_z_exp",
                 "rew_action_rate",     
-                "raibert_heuristic"    
+                "raibert_heuristic",
+                "orient",
+                "lin_vel_z",
+                "dof_vel",
+                "ang_vel_xy",
             ]
         }
 
@@ -160,16 +165,39 @@ class Rob6323Go2Env(DirectRLEnv):
         self.last_actions = torch.roll(self.last_actions, 1, 2)
         self.last_actions[:, :, 0] = self._actions[:]
 
-        self._step_contact_targets() # Update gait state
+        self._step_contact_targets()  # Update gait state
         rew_raibert_heuristic = self._reward_raibert_heuristic()
+        
+        # 1. Penalize non-vertical orientation (projected gravity on XY plane)
+        # Hint: We want the robot to stay upright, so gravity should only project onto Z.
+        # Calculate the sum of squares of the X and Y components of projected_gravity_b.
+        rew_orient = torch.sum(torch.square(self.robot.data.projected_gravity_b[:, :2]), dim=1)
+
+        # 2. Penalize vertical velocity (z-component of base linear velocity)
+        # Hint: Square the Z component of the base linear velocity.
+        rew_lin_vel_z = torch.square(self.robot.data.root_lin_vel_b[:, 2])
+
+        # 3. Penalize high joint velocities
+        # Hint: Sum the squares of all joint velocities.
+        rew_dof_vel = torch.sum(torch.square(self.robot.data.joint_vel), dim=1)
+
+        # 4. Penalize angular velocity in XY plane (roll/pitch)
+        # Hint: Sum the squares of the X and Y components of the base angular velocity.
+        rew_ang_vel_xy = torch.sum(torch.square(self.robot.data.root_ang_vel_b[:, :2]), dim=1)
 
         rewards = {
             "track_lin_vel_xy_exp": lin_vel_error_mapped * self.cfg.lin_vel_reward_scale,  # Removed step_dt
             "track_ang_vel_z_exp": yaw_rate_error_mapped * self.cfg.yaw_rate_reward_scale,  # Removed step_dt
             "rew_action_rate": rew_action_rate * self.cfg.action_rate_reward_scale,
             "raibert_heuristic": rew_raibert_heuristic * self.cfg.raibert_heuristic_reward_scale,
+            "orient": rew_orient * self.cfg.orient_reward_scale,
+            "lin_vel_z": rew_lin_vel_z * self.cfg.lin_vel_z_reward_scale,
+            "dof_vel": rew_dof_vel * self.cfg.dof_vel_reward_scale,
+            "ang_vel_xy": rew_ang_vel_xy * self.cfg.ang_vel_xy_reward_scale,
         }
+
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
+
         # Logging
         for key, value in rewards.items():
             self._episode_sums[key] += value
@@ -187,9 +215,7 @@ class Rob6323Go2Env(DirectRLEnv):
         # apply all terminations
         died = cstr_termination_contacts | cstr_upsidedown | cstr_base_height_min
         return died, time_out
-        
     
-
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self.robot._ALL_INDICES
@@ -300,7 +326,7 @@ class Rob6323Go2Env(DirectRLEnv):
 
             idxs[stance_idxs] = torch.remainder(idxs[stance_idxs], 1) * (0.5 / durations[stance_idxs])
             idxs[swing_idxs] = 0.5 + (torch.remainder(idxs[swing_idxs], 1) - durations[swing_idxs]) * (
-                        0.5 / (1 - durations[swing_idxs]))
+                0.5 / (1 - durations[swing_idxs]))
 
         self.clock_inputs[:, 0] = torch.sin(2 * np.pi * foot_indices[0])
         self.clock_inputs[:, 1] = torch.sin(2 * np.pi * foot_indices[1])
@@ -312,25 +338,25 @@ class Rob6323Go2Env(DirectRLEnv):
         smoothing_cdf_start = torch.distributions.normal.Normal(0, kappa).cdf  # (x) + torch.distributions.normal.Normal(1, kappa).cdf(x)) / 2
 
         smoothing_multiplier_FL = (smoothing_cdf_start(torch.remainder(foot_indices[0], 1.0)) * (
-                1 - smoothing_cdf_start(torch.remainder(foot_indices[0], 1.0) - 0.5)) +
-                                    smoothing_cdf_start(torch.remainder(foot_indices[0], 1.0) - 1) * (
-                                            1 - smoothing_cdf_start(
-                                        torch.remainder(foot_indices[0], 1.0) - 0.5 - 1)))
+            1 - smoothing_cdf_start(torch.remainder(foot_indices[0], 1.0) - 0.5)) +
+            smoothing_cdf_start(torch.remainder(foot_indices[0], 1.0) - 1) * (
+            1 - smoothing_cdf_start(
+                torch.remainder(foot_indices[0], 1.0) - 0.5 - 1)))
         smoothing_multiplier_FR = (smoothing_cdf_start(torch.remainder(foot_indices[1], 1.0)) * (
-                1 - smoothing_cdf_start(torch.remainder(foot_indices[1], 1.0) - 0.5)) +
-                                    smoothing_cdf_start(torch.remainder(foot_indices[1], 1.0) - 1) * (
-                                            1 - smoothing_cdf_start(
-                                        torch.remainder(foot_indices[1], 1.0) - 0.5 - 1)))
+            1 - smoothing_cdf_start(torch.remainder(foot_indices[1], 1.0) - 0.5)) +
+            smoothing_cdf_start(torch.remainder(foot_indices[1], 1.0) - 1) * (
+            1 - smoothing_cdf_start(
+                torch.remainder(foot_indices[1], 1.0) - 0.5 - 1)))
         smoothing_multiplier_RL = (smoothing_cdf_start(torch.remainder(foot_indices[2], 1.0)) * (
-                1 - smoothing_cdf_start(torch.remainder(foot_indices[2], 1.0) - 0.5)) +
-                                    smoothing_cdf_start(torch.remainder(foot_indices[2], 1.0) - 1) * (
-                                            1 - smoothing_cdf_start(
-                                        torch.remainder(foot_indices[2], 1.0) - 0.5 - 1)))
+            1 - smoothing_cdf_start(torch.remainder(foot_indices[2], 1.0) - 0.5)) +
+            smoothing_cdf_start(torch.remainder(foot_indices[2], 1.0) - 1) * (
+            1 - smoothing_cdf_start(
+                torch.remainder(foot_indices[2], 1.0) - 0.5 - 1)))
         smoothing_multiplier_RR = (smoothing_cdf_start(torch.remainder(foot_indices[3], 1.0)) * (
-                1 - smoothing_cdf_start(torch.remainder(foot_indices[3], 1.0) - 0.5)) +
-                                    smoothing_cdf_start(torch.remainder(foot_indices[3], 1.0) - 1) * (
-                                            1 - smoothing_cdf_start(
-                                        torch.remainder(foot_indices[3], 1.0) - 0.5 - 1)))
+            1 - smoothing_cdf_start(torch.remainder(foot_indices[3], 1.0) - 0.5)) +
+            smoothing_cdf_start(torch.remainder(foot_indices[3], 1.0) - 1) * (
+            1 - smoothing_cdf_start(
+                torch.remainder(foot_indices[3], 1.0) - 0.5 - 1)))
 
         self.desired_contact_states[:, 0] = smoothing_multiplier_FL
         self.desired_contact_states[:, 1] = smoothing_multiplier_FR
@@ -341,8 +367,7 @@ class Rob6323Go2Env(DirectRLEnv):
         cur_footsteps_translated = self.foot_positions_w - self.robot.data.root_pos_w.unsqueeze(1)
         footsteps_in_body_frame = torch.zeros(self.num_envs, 4, 3, device=self.device)
         for i in range(4):
-            footsteps_in_body_frame[:, i, :] = math_utils.quat_apply_yaw(math_utils.quat_conjugate(self.robot.data.root_quat_w),
-                                                            cur_footsteps_translated[:, i, :])
+            footsteps_in_body_frame[:, i, :] = math_utils.quat_apply_yaw(math_utils.quat_conjugate(self.robot.data.root_quat_w), cur_footsteps_translated[:, i, :])
 
         # nominal positions: [FR, FL, RR, RL]
         desired_stance_width = 0.25
