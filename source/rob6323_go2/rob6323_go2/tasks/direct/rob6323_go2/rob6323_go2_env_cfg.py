@@ -91,13 +91,11 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     current_vel_visualizer_cfg.markers["arrow"].scale = (0.5, 0.5, 0.5)
 
     # reward scales
-    lin_vel_reward_scale = 1.0
+    lin_vel_reward_scale = 1.5
     yaw_rate_reward_scale = 0.5
 
-    # In Rob6323Go2EnvCfg (source/rob6323_go2/rob6323_go2/tasks/direct/rob6323_go2/rob6323_go2_env_cfg.py)
-
     # reward scales
-    action_rate_reward_scale = -0.5
+    action_rate_reward_scale = -0.2
 
     # PD control gains
     Kp = 20.0  # Proportional gain
@@ -108,9 +106,7 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
 
     observation_space = 48 + 4  # Added 4 for clock inputs
 
-    raibert_heuristic_reward_scale = -10.0
-    feet_clearance_reward_scale = -30.0
-    tracking_contacts_shaped_force_reward_scale = 4.0
+    raibert_heuristic_reward_scale = -15.0
 
     # Additional reward scales
     orient_reward_scale = -5.0
@@ -118,6 +114,7 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     dof_vel_reward_scale = -0.0001
     ang_vel_xy_reward_scale = -0.001
 
-    feet_clearance_reward_scale = -30.0
-    tracking_contacts_shaped_force_reward_scale = 4.0
+
+    feet_clearance_reward_scale = -35.0
+    tracking_contacts_shaped_force_reward_scale = 6.0
     
