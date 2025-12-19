@@ -91,7 +91,7 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     current_vel_visualizer_cfg.markers["arrow"].scale = (0.5, 0.5, 0.5)
 
     # reward scales
-    lin_vel_reward_scale = 1.5
+    lin_vel_reward_scale = 1.0
     yaw_rate_reward_scale = 0.5
 
     # reward scales
@@ -115,6 +115,5 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     ang_vel_xy_reward_scale = -0.001
 
 
-    feet_clearance_reward_scale = -35.0
-    tracking_contacts_shaped_force_reward_scale = 6.0
-    
+    feet_clearance_reward_scale = -40.0
+    tracking_contacts_shaped_force_reward_scale = 8.0
