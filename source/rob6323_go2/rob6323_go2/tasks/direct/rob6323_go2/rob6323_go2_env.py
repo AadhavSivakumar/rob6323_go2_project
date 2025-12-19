@@ -36,6 +36,10 @@ class Rob6323Go2Env(DirectRLEnv):
         self._feet_ids_sensor = []
         foot_names = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
 
+        # initialize stiction and viscous vars
+        self.rand_stict = torch.zeros(self.num_envs, device=self.device)
+        self.rand_visc = torch.zeros(self.num_envs, device=self.device)
+
         for name in foot_names:
             id_list, _ = self.robot.find_bodies(name)
             self._feet_ids.append(id_list[0])
@@ -121,13 +125,19 @@ class Rob6323Go2Env(DirectRLEnv):
 
     def _apply_action(self) -> None:
         # Compute PD torques
+        
+        stiction_torque = self.rand_stict.unsqueeze(1) * torch.tanh(self.robot.data.joint_vel / 0.1)
+        viscous_torque = self.rand_visc.unsqueeze(1) * self.robot.data.joint_vel
+
+        # Compute PD torques
         torques = torch.clip(
             (
                 self.Kp * (
                     self.desired_joint_pos 
-                    - self.robot.data.joint_pos 
+                    - self.robot.data.joint_pos
                 )
                 - self.Kd * self.robot.data.joint_vel
+                - (stiction_torque + viscous_torque)  # subtract friction
             ),
             -self.torque_limits,
             self.torque_limits,
@@ -254,6 +264,9 @@ class Rob6323Go2Env(DirectRLEnv):
         self.robot.reset(env_ids)
         # Reset raibert quantity
         self.gait_indices[env_ids] = 0
+        n = len(env_ids)
+        self.rand_stict[env_ids] = sample_uniform(0.0, 2.5, (n,), device=self.device)
+        self.rand_visc[env_ids] = sample_uniform(0.00, 0.3, (n,), device=self.device)
 
         super()._reset_idx(env_ids)
         if len(env_ids) == self.num_envs:
